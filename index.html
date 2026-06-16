@@ -84,48 +84,46 @@ function buildBaseDeck(){
 }
 function shuffle(arr){ var a=arr.slice(),i,j; for(i=a.length-1;i>0;i--){ j=Math.floor(Math.random()*(i+1)); var t=a[i];a[i]=a[j];a[j]=t; } return a; }
 
-function flipStart(deckIn, discardIn){
-  var deck=deckIn.slice(), discard=discardIn.slice();
+function flipStart(deckIn){
+  // 案A:山札のみ。捨て札は戻さない。数字の開始札が引けなければ null(=夜明け)
+  var deck=deckIn.slice();
   for(var attempt=0;attempt<30;attempt++){
-    if(deck.length<2){ deck=deck.concat(shuffle(discard)); discard=[]; if(deck.length===0) return null; }
+    if(deck.length<1) return null;
     var c1=deck.shift();
-    if(isNum(c1)) return {start:c1,paired:null,deck:deck,discard:discard};
-    if(deck.length===0){ deck=shuffle([c1]); continue; }
+    if(isNum(c1)) return {start:c1,paired:null,deck:deck};
+    if(deck.length<1) return null;            // 特殊札1枚で山が尽きた
     var c2=deck.shift();
-    if(isNum(c2)) return {start:c2,paired:c1,deck:deck,discard:discard};
-    deck=shuffle(deck.concat([c1,c2]));
+    if(isNum(c2)) return {start:c2,paired:c1,deck:deck};
+    deck=shuffle(deck.concat([c1,c2]));        // 特殊札が連続→戻して引き直し
   }
   return null;
 }
-function dealKyoku(state, firstKyoku){
-  var pool;
-  if(firstKyoku){ pool=shuffle(buildBaseDeck()); }
-  else { pool=shuffle(state.deck.concat(state.discard, state.carry, state.paired?[state.paired]:[], state.start?[state.start]:[])); }
+function dealInitial(state){
+  // 九尾を除く70枚から各自X枚配り、残りを山に。九尾は山の上半分に仕込む。
+  var pool=shuffle(buildBaseDeck());     // 70枚(九尾なし)
   var N=state.players.length, hs=state.handSize;
-  var need=N*hs+hs+4;
-  if(!firstKyoku && pool.length<need) return {short:true};
   var hand={};
   state.players.forEach(function(p,idx){ hand[p]=pool.slice(idx*hs,(idx+1)*hs); });
   var deck=pool.slice(N*hs);
-  if(firstKyoku){ var half=Math.ceil(deck.length/2); var top=shuffle(deck.slice(0,half).concat([KYUBI])); deck=top.concat(deck.slice(half)); }
-  return {hand:hand, deck:deck, discard:[]};
+  var half=Math.ceil(deck.length/2);
+  var top=shuffle(deck.slice(0,half).concat([KYUBI]));
+  deck=top.concat(deck.slice(half));
+  return {hand:hand, deck:deck};
 }
-function qualifies(e,dir,base){ if(isKyubi(e.c)) return true; var v=isFox(e.c)?e.d:e.c.v; return dir==="H"? v>=base : v<=base; }
 function effVal(e){ return isFox(e.c)?e.d:e.c.v; }
-function judge(entries,dir,base,oya,N){
+// 基準値なし:高=最大/低=最小。同数字は相殺。残らなければ親から一番遠い席(おこぼれ)。九尾は無条件勝利。
+function judge(entries,dir,oya,N){
   var ky=null; entries.forEach(function(e){ if(isKyubi(e.c)) ky=e; });
   var marks={}; entries.forEach(function(e){ marks[e.name]="lose"; });
   if(ky){ entries.forEach(function(e){ marks[e.name]= e===ky?"kyubi":"lose"; }); return {kind:"win",winner:ky.name,marks:marks,kyubi:true}; }
-  var q=entries.filter(function(e){ return qualifies(e,dir,base); });
-  entries.forEach(function(e){ if(q.indexOf(e)<0) marks[e.name]="out"; });
-  if(q.length===0) return {kind:"none",marks:marks};
-  var reals=q.filter(function(e){return isNum(e.c);});
-  var foxes=q.filter(function(e){return isFox(e.c);});
+  var reals=entries.filter(function(e){return isNum(e.c);});
+  var foxes=entries.filter(function(e){return isFox(e.c);});
   var cnt={}; reals.forEach(function(e){ cnt[e.c.v]=(cnt[e.c.v]||0)+1; });
   var fcnt={}; foxes.forEach(function(e){ fcnt[e.d]=(fcnt[e.d]||0)+1; });
   var cand=[];
   reals.forEach(function(e){ if(cnt[e.c.v]>=2) marks[e.name]="cxl"; else cand.push(e); });
-  foxes.forEach(function(e){ if(fcnt[e.d]>=2) marks[e.name]="cxl"; else cand.push(e); });
+  // 化け狐:同値の実札があれば負け(色なし)、化け狐どうしの同値は相殺
+  foxes.forEach(function(e){ if(fcnt[e.d]>=2 || cnt[e.d]) marks[e.name]="cxl"; else cand.push(e); });
   if(cand.length===0){
     var best=null,bd=-1;
     entries.forEach(function(e){ var d=(e.seat-oya+N)%N; if(d>bd){bd=d;best=e;} });
@@ -159,33 +157,26 @@ function setPoints(cards){
 function pushLog(st,msg){ st.log=[msg].concat(st.log||[]).slice(0,40); }
 function startNextRound(st){
   st.plays={}; st.dir=null;
-  if(st.round>=st.handSize){
-    if(st.kyoku>=st.kyokuTotal){ st.phase="dawn"; pushLog(st,"第"+st.kyoku+"局が終わり、夜明けが来た。蔵の札で九を組もう。"); return; }
-    var res=dealKyoku(st,false);
-    if(res.short){ st.phase="dawn"; pushLog(st,"札が尽きたため、ここで夜明けとする。"); return; }
-    st.kyoku+=1; st.round=1; st.hand=res.hand; st.deck=res.deck; st.discard=[]; st.carry=[]; st.start=null; st.paired=null;
-    st.oya=(st.oya+1)%st.players.length; pushLog(st,"第"+st.kyoku+"局。札を配り直した。");
-  } else { st.round+=1; st.oya=(st.oya+1)%st.players.length; }
-  var f=flipStart(st.deck,st.discard);
-  if(!f){ st.phase="dawn"; pushLog(st,"山が尽きたため、ここで夜明けとする。"); return; }
-  st.start=f.start; st.paired=f.paired; st.deck=f.deck; st.discard=f.discard; st.base=f.start.v; st.phase="declare";
+  st.roundNo=(st.roundNo||1)+1;
+  st.oya=(st.oya+1)%st.players.length;
+  // 補充:各自X枚まで山札から引く(常時キープ)
+  st.players.forEach(function(p){
+    while(st.hand[p].length < st.handSize && st.deck.length>0){ st.hand[p].push(st.deck.shift()); }
+  });
+  // 開始札(案A:山が尽きたら夜明け)
+  var f=flipStart(st.deck);
+  if(!f){ st.phase="dawn"; pushLog(st,"山札が尽きた ── 夜明けだ。蔵の札で九を組もう。"); return; }
+  st.start=f.start; st.paired=f.paired; st.deck=f.deck; st.phase="declare";
 }
 function resolveRound(s){
   var entries=s.players.map(function(p,seat){ var o={name:p,seat:seat}; var pl=s.plays[p]; o.c=pl.c; o.d=pl.d; return o; });
-  var res=judge(entries,s.dir,s.base,s.oya,s.players.length);
-  s.lastRound={ kyoku:s.kyoku, round:s.round, dir:s.dir, base:s.base,
+  var res=judge(entries,s.dir,s.oya,s.players.length);
+  s.lastRound={ round:s.roundNo, dir:s.dir,
     entries:entries.map(function(e){ return {name:e.name,c:e.c,d:e.d,mark:res.marks[e.name]}; }),
     kind:res.kind, winner:res.winner||null };
-  if(res.kind==="none"){
-    s.discard=s.discard.concat(s.carry, entries.map(function(e){return e.c;}));
-    s.carry=[s.start].concat(s.paired?[s.paired]:[]);
-    pushLog(s,"第"+s.kyoku+"局 R"+s.round+":誰も条件を満たさず。"+cardName(s.start)+"を持ち越し。");
-    s.start=null; s.paired=null; startNextRound(s);
-  } else {
-    var label = res.kind==="okobore"?"(おこぼれ)" : (res.kyubi?"(九尾の一撃)":"");
-    pushLog(s,"第"+s.kyoku+"局 R"+s.round+":"+res.winner+"の勝ち"+label+"。場から1枚選ぶ。");
-    s.phase="pick"; s.pickFor=res.winner;
-  }
+  var label = res.kind==="okobore"?"(おこぼれ)" : (res.kyubi?"(九尾の一撃)":"");
+  pushLog(s,"R"+s.roundNo+":"+res.winner+"の勝ち"+label+"。場から1枚選ぶ。");
+  s.phase="pick"; s.pickFor=res.winner;
 }
 
 // ============================================================
@@ -246,19 +237,18 @@ function hostApply(name, action){
   if(action.type==="start"){
     if(name!==s.host || s.phase!=="lobby" || s.players.length<3) return;
     var Np=s.players.length;
-    s.handSize=Np===5?5:4; s.kyokuTotal=Np===5?5:4; s.kyoku=1; s.round=1; s.oya=0;
+    s.handSize = Np===3?8 : (Np===4?6 : 5);   // 常時キープ枚数(3人8/4人6/5人5)
+    s.oya=0; s.roundNo=1;
     s.kura={}; s.players.forEach(function(p){s.kura[p]=[];});
-    s.carry=[]; s.plays={}; s.dawn={}; s.lastRound=null;
-    var res=dealKyoku(s,true); s.hand=res.hand; s.deck=res.deck; s.discard=[];
-    var f=flipStart(s.deck,s.discard); s.start=f.start; s.paired=f.paired; s.deck=f.deck; s.discard=f.discard; s.base=f.start.v;
-    s.phase="declare"; pushLog(s,"勝負開始。第1局、親は"+s.players[0]+"。");
+    s.discard=[]; s.plays={}; s.dawn={}; s.lastRound=null;
+    var res=dealInitial(s); s.hand=res.hand; s.deck=res.deck;
+    var f=flipStart(s.deck); s.start=f.start; s.paired=f.paired; s.deck=f.deck;
+    s.phase="declare"; pushLog(s,"勝負開始。親は"+s.players[0]+"。手札は常に"+s.handSize+"枚。");
   }
   else if(action.type==="declare"){
     if(s.phase!=="declare" || s.players[s.oya]!==name) return;
-    if(s.base===1 && action.dir==="L") return;
-    if(s.base===8 && action.dir==="H") return;
     s.dir=action.dir; s.phase="play"; s.plays={};
-    pushLog(s,"親"+name+"が「"+(action.dir==="H"?"高":"低")+"」を宣言(基準値"+s.base+")。");
+    pushLog(s,"親"+name+"が「"+(action.dir==="H"?"高":"低")+"」を宣言。");
   }
   else if(action.type==="play"){
     if(s.phase!=="play" || s.plays[name]) return;
@@ -275,10 +265,10 @@ function hostApply(name, action){
     var entries=s.players.map(function(p){ var o={name:p}; o.c=s.plays[p].c; o.d=s.plays[p].d; return o; });
     var chosen=null; entries.forEach(function(e){ if(e.c.i===action.cardId) chosen=e; });
     if(!chosen || isKyubi(chosen.c)) return;
-    var gain=[chosen.c].concat(s.carry, s.start?[s.start]:[], s.paired?[s.paired]:[]);
+    var gain=[chosen.c].concat(s.start?[s.start]:[], s.paired?[s.paired]:[]);
     s.kura[name]=s.kura[name].concat(gain);
     s.discard=s.discard.concat(entries.filter(function(e){return e.c.i!==action.cardId;}).map(function(e){return e.c;}));
-    s.carry=[]; s.start=null; s.paired=null; s.pickFor=null;
+    s.start=null; s.paired=null; s.pickFor=null;
     pushLog(s,name+"が"+gain.length+"枚を蔵に納めた。"); startNextRound(s);
   }
   else if(action.type==="dawn"){
@@ -381,11 +371,12 @@ function cardHTML(c, opts){
 function backHTML(label){ return '<div class="ka-card back">'+(label||"?")+'</div>'; }
 
 var refHTML = '<div class="ka-panel" style="font-size:12px;line-height:1.8">'
- +'<b>① 開始札</b>:数字=基準値。特殊札ならもう1枚めくってセット。<br>'
- +'<b>② 宣言</b>:親が高/低(基準値1は高のみ・8は低のみ)。<br>'
+ +'<b>① 開始札</b>:中央に1枚めくる(色=同スートボーナス用)。特殊札ならもう1枚めくってセット。<br>'
+ +'<b>② 宣言</b>:親が高(大きいほど強い)か低(小さいほど強い)かを宣言。<br>'
  +'<b>③ 全員伏せて1枚</b>(パス不可)。<br>'
- +'<b>④ 公開</b>:高=基準値以上で最大/低=基準値以下で最小。同数字は相殺。相殺で消えたら親から一番遠い席が拾う。誰も条件外なら持ち越し。<br>'
- +'<b>⑤ 褒美</b>:持ち越し+開始札+場の1枚(最大3枚)。使った九尾は拾えない。<br>'
+ +'<b>④ 公開</b>:高=最大/低=最小が勝ち。同じ数字は相殺(全員負け)。相殺で残らなければ親から一番遠い席が拾う。<br>'
+ +'<b>⑤ 褒美</b>:開始札+場の好きな1枚を蔵へ(使った九尾は拾えない)。<br>'
+ +'<b>⑥ 補充</b>:各自、山札から1枚引いて手札を常にX枚に保つ。<b>山札が尽きたら夜明け</b>(捨て札は戻さない)。<br>'
  +'<b>夜明け</b>:合計9の組(2〜3枚)=1点。同スート2枚=2点・3枚=3点。九尾単体=1点。同点は未使用札の合計。</div>';
 
 function render(){
@@ -438,31 +429,44 @@ function lobbyHTML(v){
     +'<div class="ka-serif" style="font-size:42px;letter-spacing:.35em;color:#E8D9A8">'+ROOM+'</div></div>'
     +'<div class="ka-panel"><div class="ka-label">集まった狐('+v.players.length+'/5)</div>'+pills
     +'<div style="margin-top:14px">'+ctrl+'</div></div>'
-    +'<div class="ka-foot">3人:4枚×4局 ／ 4人:4枚×4局 ／ 5人:5枚×5局</div>';
+    +'<div class="ka-foot">手札は常時キープ ── 3人:8枚 ／ 4人:6枚 ／ 5人:5枚。山札が尽きるまで戦う。</div>';
 }
 
 function gameHTML(v){
   var oya=v.players[v.oya];
   var status='<div style="display:flex;justify-content:space-between;font-size:12px;color:#C9BFA8;padding:8px 2px">'
-    +'<span>第'+v.kyoku+'局 / 全'+v.kyokuTotal+'局 ── R'+v.round+'/'+v.handSize+'</span><span>親:'+esc(oya)+'</span></div>';
+    +'<span>第'+(v.roundNo||1)+'ラウンド ── 山札 残り'+v.deck.length+'枚</span><span>親:'+esc(oya)+'</span></div>';
 
   var startC = v.start? cardHTML(v.start,{}) : backHTML("—");
   var pairedC = v.paired? cardHTML(v.paired,{}) : "";
-  var baseInfo = v.start? ('<div class="ka-sub" style="margin-top:2px">基準値 <b style="color:#E8D9A8;font-size:15px">'+v.base+'</b>'
-     +(v.dir?(' <span style="color:#E8D9A8">「'+(v.dir==="H"?"高":"低")+'」</span>'):"")+'</div>') : "";
-  var carry = (v.carry&&v.carry.length)? v.carry.map(function(c){return cardHTML(c,{small:true});}).join("") : '<span class="ka-sub">なし</span>';
+  var baseInfo = v.start? ('<div class="ka-sub" style="margin-top:2px">スート <b style="color:#E8D9A8">'+SUITS[v.start.s]+'</b>'
+     +(v.dir?(' ／ <span style="color:#E8D9A8">「'+(v.dir==="H"?"高":"低")+'」</span>'):"")+'</div>') : "";
   var board='<div class="ka-board"><div class="ka-label">場</div>'
     +'<div style="display:flex;gap:16px;align-items:flex-start">'
     +'<div><div class="ka-sub">開始札'+(v.paired?"+特殊":"")+'</div>'+startC+pairedC+baseInfo+'</div>'
-    +'<div><div class="ka-sub">持ち越し</div>'+carry+'</div>'
     +'<div style="margin-left:auto;text-align:right"><div class="ka-sub">山:'+v.deck.length+'枚</div><div class="ka-sub">捨て:'+v.discard.length+'枚</div></div>'
     +'</div></div>';
+
+  // --- 常時表示の手札(自分が伏せ札を選んでいる最中だけは、下の操作パネルに任せて省略) ---
+  var iAmPlaying = (v.phase==="play" && (v.playedNames||[]).indexOf(v.you)<0);
+  var handStrip="";
+  if(!iAmPlaying){
+    var myhand=(v.myHand||[]);
+    var hs2 = myhand.length ? myhand.map(function(c){ return cardHTML(c,{small:true}); }).join("") : '<span class="ka-sub">手札なし</span>';
+    var myPlayInfo="";
+    if(v.phase==="play" && v.myPlay){
+      myPlayInfo='<div class="ka-sub" style="margin-top:6px">あなたが伏せた札:</div>'
+        +'<div class="ka-row" style="margin-top:2px">'+cardHTML(v.myPlay.c,{d:v.myPlay.d,small:true})+'</div>';
+    }
+    handStrip='<div class="ka-panel"><div class="ka-label">あなたの手札('+myhand.length+'枚)</div>'
+      +'<div class="ka-row">'+hs2+'</div>'+myPlayInfo+'</div>';
+  }
 
   var lr=v.lastRound, mid="";
   if(lr && v.phase==="declare"){
     var ents=lr.entries.map(function(e){ return '<div style="text-align:center">'+cardHTML(e.c,{d:e.d,mark:e.mark,small:true})+'<div class="ka-pname">'+esc(e.name)+'</div></div>'; }).join("");
-    mid='<div class="ka-panel"><div class="ka-label">前ラウンドの結果(R'+lr.round+'・'+(lr.dir==="H"?"高":"低")+lr.base+')</div>'
-      +'<div class="ka-row">'+ents+'</div>'+(lr.kind==="none"?'<div class="ka-sub">誰も条件を満たさず ── 開始札を持ち越し。</div>':"")+'</div>';
+    mid='<div class="ka-panel"><div class="ka-label">前ラウンドの結果(R'+lr.round+'・'+(lr.dir==="H"?"高":"低")+')</div>'
+      +'<div class="ka-row">'+ents+'</div></div>';
   }
 
   var panel="";
@@ -470,8 +474,8 @@ function gameHTML(v){
     if(v.players[v.oya]===v.you){
       panel='<div class="ka-panel"><div class="ka-label">あなたが親 ── 向きを宣言</div>'
         +'<div style="display:flex;gap:10px">'
-        +'<button class="ka-dirbtn" data-act="declareH" '+(v.base===8?"disabled":"")+'>高<div style="font-size:11px;font-weight:400">基準値'+v.base+'以上で最大</div></button>'
-        +'<button class="ka-dirbtn" data-act="declareL" '+(v.base===1?"disabled":"")+'>低<div style="font-size:11px;font-weight:400">基準値'+v.base+'以下で最小</div></button>'
+        +'<button class="ka-dirbtn" data-act="declareH">高<div style="font-size:11px;font-weight:400">大きいほど強い</div></button>'
+        +'<button class="ka-dirbtn" data-act="declareL">低<div style="font-size:11px;font-weight:400">小さいほど強い</div></button>'
         +'</div></div>';
     } else {
       panel='<div class="ka-panel"><div class="ka-sub" style="text-align:center">親('+esc(oya)+')が「高」か「低」を考えています…</div></div>';
@@ -506,9 +510,9 @@ function gameHTML(v){
     }).join("");
     var note;
     if(v.pickFor===v.you){
-      note='<div class="ka-sub"><b style="color:#E8D9A8">場から1枚タップして蔵へ。</b>さらに開始札'+(v.paired?"+特殊札":"")+(v.carry.length?("+持ち越し"+v.carry.length+"枚"):"")+'も自動で得ます。</div>';
+      note='<div class="ka-sub"><b style="color:#E8D9A8">場から1枚タップして蔵へ。</b>さらに開始札'+(v.paired?"+特殊札":"")+'も自動で得ます。</div>';
     } else { note='<div class="ka-sub" style="text-align:center">'+esc(v.pickFor)+'が褒美を選んでいます…</div>'; }
-    panel='<div class="ka-panel"><div class="ka-label">公開!'+(lr.dir==="H"?"高":"低")+lr.base+' ── 勝者:'+esc(v.pickFor)+(lr.kind==="okobore"?"(おこぼれ)":"")+'</div>'
+    panel='<div class="ka-panel"><div class="ka-label">公開!'+(lr.dir==="H"?"高":"低")+' ── 勝者:'+esc(v.pickFor)+(lr.kind==="okobore"?"(おこぼれ)":"")+'</div>'
       +'<div class="ka-row" style="margin-bottom:8px">'+ents2+'</div>'+note+'</div>';
   }
 
@@ -523,7 +527,7 @@ function gameHTML(v){
 
   var log='<div class="ka-panel"><div class="ka-label">夜の記録</div><div class="ka-log">'+(v.log||[]).map(function(l){return '<div>'+esc(l)+'</div>';}).join("")+'</div></div>';
 
-  return status+board+mid+panel+kura+log+'<div class="ka-foot">同期はP2P。反応が無いときは少し待つか、ホームから同名+同コードで再入室を。</div>';
+  return status+board+mid+panel+handStrip+kura+log+'<div class="ka-foot">同期はP2P。反応が無いときは少し待つか、ホームから同名+同コードで再入室を。</div>';
 }
 
 function dawnHTML(v){
