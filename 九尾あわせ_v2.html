@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#1a2438" />
+<title>九尾あわせ ── オンライン対戦</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100%; }
+  body { background: #1a2438; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  .ka-root { max-width: 540px; margin: 0 auto; min-height: 100vh; color: #efe8d8; padding: 0 14px 90px;
+    background: radial-gradient(1200px 500px at 80% -10%, #2c3c5e 0%, #22304a 45%, #1a2438 100%); }
+  .ka-serif { font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif; }
+  .ka-head { display: flex; align-items: baseline; justify-content: space-between; padding: 16px 2px 8px; border-bottom: 1px solid rgba(184,144,46,.5); }
+  .ka-title { font-size: 21px; letter-spacing: .18em; font-weight: 800; }
+  .ka-sub { font-size: 11px; color: #c9bfa8; }
+  .ka-btn { background: #b5413a; color: #fff; border: none; border-radius: 8px; padding: 11px 16px; font-size: 14px; font-weight: 700; cursor: pointer; letter-spacing: .06em; }
+  .ka-btn:disabled { opacity: .35; cursor: default; }
+  .ka-btn.alt { background: transparent; border: 1px solid #b8902e; color: #e8d9a8; }
+  .ka-btn.sm { padding: 7px 12px; font-size: 12.5px; border-radius: 7px; }
+  .ka-input { width: 100%; background: #fbf6ec; color: #2b2b2b; border: none; border-radius: 8px; padding: 11px 12px; font-size: 15px; margin: 4px 0 12px; }
+  .ka-panel { background: rgba(251,246,236,.06); border: 1px solid rgba(217,205,181,.25); border-radius: 12px; padding: 12px; margin: 12px 0; }
+  .ka-board { background: linear-gradient(160deg,#2a2522,#1d1a18); border: 1px solid #b8902e; border-radius: 14px; padding: 14px 12px; margin: 14px 0; position: relative; overflow: hidden; }
+  .ka-board:before { content: ""; position: absolute; right: -18px; top: -18px; width: 74px; height: 74px; border-radius: 50%; background: #e8d9a8; opacity: .14; }
+  .ka-label { font-size: 10.5px; letter-spacing: .14em; color: #b8902e; font-weight: 700; margin-bottom: 6px; }
+  .ka-card { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 46px; height: 64px; border-radius: 7px; margin: 3px; font-weight: 800; box-shadow: 0 2px 5px rgba(0,0,0,.4); border: 1.5px solid rgba(0,0,0,.25); position: relative; vertical-align: top; user-select: none; }
+  .ka-card .v { font-size: 22px; line-height: 1; }
+  .ka-card .s { font-size: 9px; opacity: .85; margin-top: 3px; }
+  .ka-card.sel { outline: 3px solid #e8d9a8; transform: translateY(-4px); }
+  .ka-card.click { cursor: pointer; transition: transform .12s; }
+  .ka-card.fox { background: linear-gradient(150deg,#caa64b,#9a7420); color: #241c08; }
+  .ka-card.kyubi { background: linear-gradient(150deg,#d8453c,#7c1f18); color: #fff; }
+  .ka-card.back { background: repeating-linear-gradient(45deg,#2f3d5c,#2f3d5c 5px,#27334e 5px,#27334e 10px); border-color: #b8902e; color: #b8902e; font-size: 15px; }
+  .ka-card.small { transform: scale(.85); }
+  .ka-mark { position: absolute; top: -7px; right: -7px; background: #b8902e; color: #1a1408; border-radius: 9px; font-size: 9.5px; padding: 2px 5px; font-weight: 800; }
+  .ka-mark.lose { background: #555; color: #ccc; }
+  .ka-mark.cxl { background: #8e2f2a; color: #fff; }
+  .ka-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-start; }
+  .ka-pname { font-size: 11px; color: #c9bfa8; width: 100%; text-align: center; }
+  .ka-log { font-size: 11.5px; color: #bfb59e; line-height: 1.7; max-height: 120px; overflow: auto; }
+  .ka-pill { display: inline-block; background: rgba(184,144,46,.18); border: 1px solid #b8902e; color: #e8d9a8; border-radius: 999px; padding: 3px 10px; font-size: 11.5px; margin: 2px 4px 2px 0; }
+  .ka-err { color: #f0a8a0; font-size: 13px; margin: 6px 0; }
+  .ka-ok { color: #a8e0b0; font-size: 13px; margin: 6px 0; }
+  .ka-foot { font-size: 10.5px; color: #8b836f; text-align: center; margin-top: 24px; line-height: 1.7; }
+  .ka-dirbtn { flex: 1; padding: 16px 0; font-size: 18px; border-radius: 10px; border: 1.5px solid #b8902e; background: rgba(251,246,236,.04); color: #efe8d8; font-weight: 800; cursor: pointer; }
+  .ka-dirbtn:disabled { opacity: .25; cursor: default; }
+  code { background: rgba(0,0,0,.3); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  @media (prefers-reduced-motion: reduce) { .ka-card.click { transition: none; } }
+</style>
+</head>
+<body>
+<div id="root" class="ka-root"></div>
+
+<script>
+"use strict";
+// ============================================================
+// 『九尾あわせ』 P2P対戦(サーバー不要)
+//  - ホスト端末が審判(全ロジックを実行)。他端末は薄い表示役。
+//  - PeerJS の無料クラウドで接続。部屋コード=ホストのID末尾。
+//  - ホストは各人へ「その人が見てよい情報だけ」を配信(手札は本人にのみ)。
+// ============================================================
+
+// ----- 定数 -----
+var SUITS = ["白","黒","青","赤"];
+var SUIT_BG = ["#F5F0E6","#33312E","#2D5C8F","#B5413A"];
+var SUIT_FG = ["#2B2B2B","#F5F0E6","#F5F0E6","#F5F0E6"];
+var KYUBI = { i:"K0", t:"K" };
+var PEER_PREFIX = "kyubiawase9-";
+var BUILD_DATE = "2026-06-18";   // このファイルの作成日
+
+function isNum(c){ return !!c && c.v !== undefined; }
+function isFox(c){ return !!c && c.t === "F"; }
+function isKyubi(c){ return !!c && c.t === "K"; }
+function cardName(c){ if(isKyubi(c)) return "九尾"; if(isFox(c)) return "化け狐"; return SUITS[c.s]+"の"+c.v; }
+function clone(o){ return JSON.parse(JSON.stringify(o)); }
+function esc(s){ return String(s).replace(/[&<>"]/g, function(m){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]; }); }
+
+function buildBaseDeck(maxNum, sets){
+  maxNum = maxNum||8;
+  sets = Math.min(3, Math.max(1, sets||2));   // 1セット = 4色 × maxNum枚
+  var d=[], id=0, copy,s,v;
+  for(copy=0;copy<sets;copy++) for(s=0;s<4;s++) for(v=1;v<=maxNum;v++) d.push({i:"n"+(id++),s:s,v:v});
+  for(var k=0;k<6;k++) d.push({i:"f"+k,t:"F"});
+  return d; // 数字札 4スート×maxNum×sets + 化け狐6
+}
+function shuffle(arr){ var a=arr.slice(),i,j; for(i=a.length-1;i>0;i--){ j=Math.floor(Math.random()*(i+1)); var t=a[i];a[i]=a[j];a[j]=t; } return a; }
+
+function flipStart(deckIn){
+  // 案A:山札のみ。捨て札は戻さない。数字の開始札が引けなければ null(=夜明け)
+  var deck=deckIn.slice();
+  for(var attempt=0;attempt<30;attempt++){
+    if(deck.length<1) return null;
+    var c1=deck.shift();
+    if(isNum(c1)) return {start:c1,paired:null,deck:deck};
+    if(deck.length<1) return null;            // 特殊札1枚で山が尽きた
+    var c2=deck.shift();
+    if(isNum(c2)) return {start:c2,paired:c1,deck:deck};
+    deck=shuffle(deck.concat([c1,c2]));        // 特殊札が連続→戻して引き直し
+  }
+  return null;
+}
+function dealInitial(state){
+  // 九尾を除く70枚から各自X枚配り、残りを山に。九尾は山の上半分に仕込む。
+  var pool=shuffle(buildBaseDeck(state.maxNum, state.sets));   // 九尾なし
+  var N=state.players.length, hs=state.handSize;
+  var hand={};
+  state.players.forEach(function(p,idx){ hand[p]=pool.slice(idx*hs,(idx+1)*hs); });
+  var deck=pool.slice(N*hs);
+  var half=Math.ceil(deck.length/2);
+  var top=shuffle(deck.slice(0,half).concat([KYUBI]));
+  deck=top.concat(deck.slice(half));
+  return {hand:hand, deck:deck};
+}
+function effVal(e){ return isFox(e.c)?e.d:e.c.v; }
+// 基準値なし:高=最大/低=最小。同数字は相殺。残らなければ親から一番遠い席(おこぼれ)。九尾は無条件勝利。
+function judge(entries,dir,oya,N,startSuit,colorWin){
+  var ky=null; entries.forEach(function(e){ if(isKyubi(e.c)) ky=e; });
+  var marks={}; entries.forEach(function(e){ marks[e.name]="lose"; });
+  if(ky){ entries.forEach(function(e){ marks[e.name]= e===ky?"kyubi":"lose"; }); return {kind:"win",winner:ky.name,marks:marks,kyubi:true}; }
+  var reals=entries.filter(function(e){return isNum(e.c);});
+  var foxes=entries.filter(function(e){return isFox(e.c);});
+  var cnt={}; reals.forEach(function(e){ cnt[e.c.v]=(cnt[e.c.v]||0)+1; });
+  var fcnt={}; foxes.forEach(function(e){ fcnt[e.d]=(fcnt[e.d]||0)+1; });
+  // オプション(色番勝ち):バッティング群でも、開始札と同スートの札は相殺を免れる。
+  //   ただし同スート・同値が2枚なら共倒れ(救済しない)。
+  var ssCnt={}; // 値ごとの「開始札スート」枚数
+  if(colorWin && startSuit!=null && startSuit>=0){
+    reals.forEach(function(e){ if(e.c.s===startSuit) ssCnt[e.c.v]=(ssCnt[e.c.v]||0)+1; });
+  }
+  var cand=[];
+  reals.forEach(function(e){
+    var batting = cnt[e.c.v]>=2;
+    var saved = batting && colorWin && startSuit!=null && startSuit>=0
+                && e.c.s===startSuit && ssCnt[e.c.v]===1;
+    if(batting && !saved) marks[e.name]="cxl"; else cand.push(e);
+  });
+  // 化け狐:同値の実札があれば負け(色なし)、化け狐どうしの同値は相殺
+  foxes.forEach(function(e){ if(fcnt[e.d]>=2 || cnt[e.d]) marks[e.name]="cxl"; else cand.push(e); });
+  if(cand.length===0){
+    var best=null,bd=-1;
+    entries.forEach(function(e){ var d=(e.seat-oya+N)%N; if(d>bd){bd=d;best=e;} });
+    marks[best.name]="win"; return {kind:"okobore",winner:best.name,marks:marks};
+  }
+  var b=null;
+  cand.forEach(function(e){
+    if(!b){ b=e; return; }
+    var a=effVal(e), bb=effVal(b);
+    if(dir==="H"? a>bb : a<bb) b=e;
+    else if(a===bb && isNum(e.c) && isFox(b.c)) b=e;
+  });
+  marks[b.name]="win"; return {kind:"win",winner:b.name,marks:marks};
+}
+function setValid(cards, maxNum){
+  maxNum = maxNum||8;
+  if(cards.length===1) return isKyubi(cards[0]);
+  if(cards.length<2||cards.length>3) return false;
+  if(cards.some(isKyubi)) return false;
+  var foxes=cards.filter(isFox).length;
+  var s=cards.filter(isNum).reduce(function(a,c){return a+c.v;},0);
+  if(foxes===0) return s===9;
+  var rest=9-s; return rest>=foxes && rest<=maxNum*foxes;
+}
+function setPoints(cards){
+  if(cards.length===1 && isKyubi(cards[0])) return 1;
+  if(cards.some(isFox)||cards.some(isKyubi)) return 1;
+  var suits={}; cards.forEach(function(c){suits[c.s]=1;});
+  if(Object.keys(suits).length===1) return cards.length===2?2:3;
+  return 1;
+}
+function pushLog(st,msg){ st.log=[msg].concat(st.log||[]).slice(0,40); }
+function startNextRound(st){
+  st.plays={}; st.dir=null;
+  st.roundNo=(st.roundNo||1)+1;
+  st.oya=(st.oya+1)%st.players.length;
+  // 補充:各自X枚まで山札から引く(常時キープ)
+  st.players.forEach(function(p){
+    while(st.hand[p].length < st.handSize && st.deck.length>0){ st.hand[p].push(st.deck.shift()); }
+  });
+  // 開始札(案A:山が尽きたら夜明け)
+  var f=flipStart(st.deck);
+  if(!f){ st.phase="dawn"; pushLog(st,"山札が尽きた ── 夜明けだ。蔵の札で九を組もう。"); return; }
+  st.start=f.start; st.paired=f.paired; st.deck=f.deck; st.phase="declare";
+}
+function resolveRound(s){
+  var entries=s.players.map(function(p,seat){ var o={name:p,seat:seat}; var pl=s.plays[p]; o.c=pl.c; o.d=pl.d; return o; });
+  var res=judge(entries,s.dir,s.oya,s.players.length, s.start?s.start.s:-1, s.colorWin);
+  s.lastRound={ round:s.roundNo, dir:s.dir,
+    entries:entries.map(function(e){ return {name:e.name,c:e.c,d:e.d,mark:res.marks[e.name]}; }),
+    kind:res.kind, winner:res.winner||null };
+  var label = res.kind==="okobore"?"(おこぼれ)" : (res.kyubi?"(九尾の一撃)":"");
+  pushLog(s,"R"+s.roundNo+":"+res.winner+"の勝ち"+label+"。場から1枚選ぶ。");
+  s.phase="pick"; s.pickFor=res.winner;
+}
+
+// ============================================================
+//  ネットワーク層(PeerJS)
+// ============================================================
+var MODE=null;            // "host" | "client"
+var MYNAME="";
+var ROOM="";
+var peer=null;
+var hostConn=null;        // client→host の接続
+var conns={};             // host: name→conn
+var GAME=null;            // host: 完全な状態
+var VIEW=null;            // 自分の画面用ビュー
+var connecting=false;
+var netError="";
+
+function genCode(){ var s="ABCDEFGHJKMNPQRSTUVWXYZ23456789",o=""; for(var i=0;i<4;i++) o+=s[Math.floor(Math.random()*s.length)]; return o; }
+
+// --- ホスト:各人が見てよい情報だけにする ---
+function viewFor(name){
+  var v=clone(GAME);
+  v.you=name;
+  // 手札:本人だけ
+  if(v.hand){
+    v.myHand = v.hand[name] ? v.hand[name] : [];
+    v.handCounts={}; v.players.forEach(function(p){ v.handCounts[p]=(v.hand[p]||[]).length; });
+    delete v.hand;
+  }
+  // 伏せ札:play中は内容を隠す(誰が出したかだけ)。本人の出した札は見せる
+  if(v.plays){
+    v.playedNames=Object.keys(v.plays);
+    v.myPlay = v.plays[name] || null;
+    delete v.plays;
+  }
+  // 蔵:本人は全部。他人は枚数のみ(結果発表時は全員ぶん公開)
+  if(v.kura){
+    v.myKura = v.kura[name] ? v.kura[name] : [];
+    if(v.phase!=="result"){
+      v.kuraCounts={}; v.players.forEach(function(p){ v.kuraCounts[p]=(v.kura[p]||[]).length; });
+      delete v.kura;
+    }
+  }
+  return v;
+}
+function broadcast(){
+  // ホスト自身
+  VIEW=viewFor(MYNAME); render();
+  // 他端末
+  Object.keys(conns).forEach(function(nm){
+    var c=conns[nm];
+    if(c && c.open){ try{ c.send({kind:"state", view:viewFor(nm)}); }catch(e){} }
+  });
+}
+
+// --- ホスト:アクション適用 ---
+function hostApply(name, action){
+  var s=GAME; if(!s) return;
+  if(action.type==="start"){
+    if(name!==s.host || s.phase!=="lobby" || s.players.length<3) return;
+    var Np=s.players.length;
+    s.maxNum = Math.min(8, Math.max(5, action.maxNum||8));  // 数字札 1〜maxNum
+    s.sets = Math.min(3, Math.max(1, action.sets||2));      // 数字札セット数(1セット=4色×maxNum)
+    s.colorWin = !!action.colorWin;                          // 色番勝ちオプション
+    s.handSize = Np===3?8 : (Np===4?6 : 5);   // 常時キープ枚数(3人8/4人6/5人5)
+    s.oya=0; s.roundNo=1;
+    s.kura={}; s.players.forEach(function(p){s.kura[p]=[];});
+    s.discard=[]; s.plays={}; s.dawn={}; s.lastRound=null;
+    var res=dealInitial(s); s.hand=res.hand; s.deck=res.deck;
+    var f=flipStart(s.deck); s.start=f.start; s.paired=f.paired; s.deck=f.deck;
+    s.phase="declare"; pushLog(s,"勝負開始。親は"+s.players[0]+"。手札は常に"+s.handSize+"枚。数字札は1〜"+s.maxNum+"を"+s.sets+"セット。色番勝ち:"+(s.colorWin?"あり":"なし")+"。");
+  }
+  else if(action.type==="declare"){
+    if(s.phase!=="declare" || s.players[s.oya]!==name) return;
+    s.dir=action.dir; s.phase="play"; s.plays={};
+    pushLog(s,"親"+name+"が「"+(action.dir==="H"?"高":"低")+"」を宣言。");
+  }
+  else if(action.type==="play"){
+    if(s.phase!=="play" || s.plays[name]) return;
+    var hand=s.hand[name]||[]; var card=null;
+    hand.forEach(function(c){ if(c.i===action.cardId) card=c; });
+    if(!card) return;
+    var entry={c:card}; if(isFox(card)) entry.d=action.foxVal;
+    s.plays[name]=entry;
+    s.hand[name]=hand.filter(function(c){return c.i!==action.cardId;});
+    if(Object.keys(s.plays).length===s.players.length) resolveRound(s);
+  }
+  else if(action.type==="pick"){
+    if(s.phase!=="pick" || s.pickFor!==name) return;
+    var entries=s.players.map(function(p){ var o={name:p}; o.c=s.plays[p].c; o.d=s.plays[p].d; return o; });
+    var chosen=null; entries.forEach(function(e){ if(e.c.i===action.cardId) chosen=e; });
+    if(!chosen || isKyubi(chosen.c)) return;
+    var gain=[chosen.c].concat(s.start?[s.start]:[], s.paired?[s.paired]:[]);
+    s.kura[name]=s.kura[name].concat(gain);
+    s.discard=s.discard.concat(entries.filter(function(e){return e.c.i!==action.cardId;}).map(function(e){return e.c;}));
+    s.start=null; s.paired=null; s.pickFor=null;
+    pushLog(s,name+"が"+gain.length+"枚を蔵に納めた。"); startNextRound(s);
+  }
+  else if(action.type==="dawn"){
+    if(s.phase!=="dawn" && s.phase!=="result") return;
+    s.dawn[name]={ sets:action.sets, score:action.score, unusedSum:action.unusedSum, done:true };
+    if(Object.keys(s.dawn).length===s.players.length){ s.phase="result"; pushLog(s,"全員の組が出揃った。格付けの時。"); }
+  }
+  broadcast();
+}
+
+// --- 自分の操作を送る(ホストなら直接適用) ---
+function doAction(action){
+  if(MODE==="host"){ hostApply(MYNAME, action); }
+  else if(hostConn && hostConn.open){ hostConn.send({kind:"action", action:action}); }
+}
+
+// --- ホスト起動 ---
+function startHost(){
+  connecting=true; netError=""; render();
+  ROOM=genCode();
+  GAME={ phase:"lobby", host:MYNAME, players:[MYNAME], log:["部屋を建てた。仲間を待つ。"] };
+  tryCreatePeer(0);
+}
+function tryCreatePeer(attempt){
+  if(attempt>4){ connecting=false; netError="接続サーバーに繋がりませんでした。少し待って再試行してください。"; render(); return; }
+  peer = new Peer(PEER_PREFIX+ROOM);
+  peer.on("open", function(){ connecting=false; VIEW=viewFor(MYNAME); render(); });
+  peer.on("connection", function(conn){
+    conn.on("data", function(msg){ handleHostMsg(conn, msg); });
+    conn.on("close", function(){ /* 切断は名前単位で再接続を許容 */ });
+  });
+  peer.on("error", function(e){
+    if(e && e.type==="unavailable-id"){ ROOM=genCode(); peer.destroy(); tryCreatePeer(attempt+1); return; }
+    connecting=false; netError="接続エラー:"+(e&&e.type?e.type:"不明")+"。再試行してください。"; render();
+  });
+}
+function handleHostMsg(conn, msg){
+  if(!msg) return;
+  if(msg.kind==="join"){
+    var nm=(msg.name||"").trim();
+    if(!nm){ conn.send({kind:"reject",reason:"名前がありません。"}); return; }
+    var existing = GAME.players.indexOf(nm)>=0;
+    if(existing){ conns[nm]=conn; conn.send({kind:"state",view:viewFor(nm)}); broadcast(); return; }
+    if(GAME.phase!=="lobby"){ conn.send({kind:"reject",reason:"すでに勝負が始まっています(同名のみ再入室可)。"}); return; }
+    if(GAME.players.length>=5){ conn.send({kind:"reject",reason:"満席です(5人まで)。"}); return; }
+    GAME.players.push(nm); conns[nm]=conn; pushLog(GAME, nm+"が席についた。");
+    broadcast();
+  } else if(msg.kind==="action"){
+    // 送信元の名前を特定
+    var sender=null; Object.keys(conns).forEach(function(k){ if(conns[k]===conn) sender=k; });
+    if(sender) hostApply(sender, msg.action);
+  }
+}
+
+// --- クライアント参加 ---
+function startClient(code){
+  connecting=true; netError=""; ROOM=code; render();
+  peer = new Peer(); // ランダムID
+  peer.on("open", function(){
+    hostConn = peer.connect(PEER_PREFIX+ROOM, {reliable:true});
+    var timer=setTimeout(function(){ if(connecting){ connecting=false; netError="部屋が見つかりません。コードを確認するか、ホストが起動しているか確かめてください。"; render(); } }, 9000);
+    hostConn.on("open", function(){ hostConn.send({kind:"join", name:MYNAME}); });
+    hostConn.on("data", function(msg){
+      if(msg.kind==="state"){ clearTimeout(timer); connecting=false; VIEW=msg.view; netError=""; render(); }
+      else if(msg.kind==="reject"){ clearTimeout(timer); connecting=false; netError=msg.reason; render(); }
+    });
+    hostConn.on("close", function(){ netError="ホストとの接続が切れました。ホストが画面を閉じた可能性があります。"; render(); });
+  });
+  peer.on("error", function(e){
+    connecting=false;
+    if(e && (e.type==="peer-unavailable")) netError="その部屋は見つかりません。コードを確認してください。";
+    else netError="接続エラー:"+(e&&e.type?e.type:"不明")+"。";
+    render();
+  });
+}
+
+// ============================================================
+//  画面描画(VIEW から組み立て)
+// ============================================================
+var SCREEN="home"; // home | game
+var sel=null, foxVal=5, showRef=false, showKura=false;
+var dawnSel=[], mySets=[];
+var optMaxNum=8, optSets=2, optColorWin=false;   // 開始前オプション(ホストが設定)
+
+function cardHTML(c, opts){
+  opts=opts||{};
+  var cls="ka-card", inner;
+  if(isKyubi(c)){ cls+=" kyubi"; inner='<div class="v ka-serif" style="font-size:15px">九尾</div><div class="s">無条件勝利</div>'; }
+  else if(isFox(c)){ cls+=" fox"; inner='<div class="v ka-serif" style="font-size:17px">化</div><div class="s">'+(opts.d?("→"+opts.d):"1〜8")+'</div>'; }
+  else { inner='<div class="v ka-serif">'+c.v+'</div><div class="s">'+SUITS[c.s]+'</div>'; }
+  if(opts.small) cls+=" small";
+  if(opts.click) cls+=" click";
+  if(opts.sel) cls+=" sel";
+  var style="";
+  if(isNum(c)) style=' style="background:'+SUIT_BG[c.s]+';color:'+SUIT_FG[c.s]+'"';
+  var mark="";
+  if(opts.mark){ var lbl={win:"勝",kyubi:"勝",lose:"負",cxl:"相殺",out:"外"}[opts.mark]; mark='<div class="ka-mark '+opts.mark+'">'+lbl+'</div>'; }
+  var data = opts.action? (' data-act="'+opts.action+'" data-id="'+esc(opts.id)+'"') : "";
+  return '<div class="'+cls+'"'+style+data+'>'+inner+mark+'</div>';
+}
+function backHTML(label){ return '<div class="ka-card back">'+(label||"?")+'</div>'; }
+
+var refHTML = '<div class="ka-panel" style="font-size:12px;line-height:1.8">'
+ +'<b>① 開始札</b>:中央に1枚めくる(色=同スートボーナス用)。特殊札ならもう1枚めくってセット。<br>'
+ +'<b>② 宣言</b>:親が高(大きいほど強い)か低(小さいほど強い)かを宣言。<br>'
+ +'<b>③ 全員伏せて1枚</b>(パス不可)。<br>'
+ +'<b>④ 公開</b>:高=最大/低=最小が勝ち。同じ数字は相殺(全員負け)。相殺で残らなければ親から一番遠い席が拾う。<br>'
+ +'<b>⑤ 褒美</b>:開始札+場の好きな1枚を蔵へ(使った九尾は拾えない)。<br>'
+ +'<b>⑥ 補充</b>:各自、山札から1枚引いて手札を常にX枚に保つ。<b>山札が尽きたら夜明け</b>(捨て札は戻さない)。<br>'
+ +'<b>夜明け</b>:合計9の組(2〜3枚)=1点。同スート2枚=2点・3枚=3点。九尾単体=1点。同点は未使用札の合計。</div>';
+
+function render(){
+  var root=document.getElementById("root");
+  if(SCREEN==="home"){ root.innerHTML=homeHTML(); return; }
+  var v=VIEW;
+  if(!v){ root.innerHTML='<div style="padding:60px;text-align:center">'+(connecting?"接続中…":"待機中…")+'</div>'; return; }
+  var head='<div class="ka-head"><div><span class="ka-title ka-serif">九尾あわせ</span>'
+    +'<span class="ka-sub" style="margin-left:10px">部屋 '+ROOM+'</span></div>'
+    +'<button class="ka-btn alt sm" data-act="toggleRef">'+(showRef?"閉じる":"早見表")+'</button></div>';
+  var ref = showRef? refHTML : "";
+
+  if(v.phase==="lobby"){ root.innerHTML=head+ref+lobbyHTML(v); return; }
+  if(v.phase==="result" && v.dawn && Object.keys(v.dawn).length===v.players.length){ root.innerHTML=head+resultHTML(v); return; }
+  if(v.phase==="dawn" || v.phase==="result"){ root.innerHTML=head+ref+dawnHTML(v); return; }
+  root.innerHTML=head+ref+gameHTML(v);
+}
+
+function homeHTML(){
+  var warn = netError? '<div class="ka-panel" style="border-color:#8E2F2A"><div class="ka-err">'+esc(netError)+'</div></div>' : "";
+  var busy = connecting? '<div class="ka-ok">接続中…少々お待ちください。</div>' : "";
+  return ''
+   +'<div style="text-align:center;padding:46px 0 10px">'
+   +'<div style="font-size:12px;letter-spacing:.3em;color:#B8902E">妖狐たちの化かし合い</div>'
+   +'<div class="ka-serif" style="font-size:38px;font-weight:800;letter-spacing:.22em;margin:10px 0 4px">九尾あわせ</div>'
+   +'<div class="ka-sub">3〜5人 ｜ サーバー不要のP2P対戦</div>'
+   +'<div class="ka-sub" style="margin-top:6px;color:#8b836f">作成日 '+BUILD_DATE+'</div></div>'
+   + warn + busy
+   +'<div class="ka-panel">'
+   +'<div class="ka-label">あなたの名前(狐の名)</div>'
+   +'<input class="ka-input" id="nameIn" placeholder="例:コン助" maxlength="10" value="'+esc(MYNAME)+'">'
+   +'<button class="ka-btn" style="width:100%" data-act="host">部屋を建てる</button>'
+   +'<div style="text-align:center;margin:14px 0 6px;color:#8b836f;font-size:12px">── または ──</div>'
+   +'<div class="ka-label">部屋コード(4文字)</div>'
+   +'<input class="ka-input" id="codeIn" placeholder="例:K9AW" maxlength="4" style="letter-spacing:.3em" value="'+esc(ROOM)+'">'
+   +'<button class="ka-btn alt" style="width:100%" data-act="join">部屋に入る / 再入室</button>'
+   +'</div>'
+   +'<div class="ka-foot">ホスト役が1人「部屋を建てる」→ 出たコードを仲間に伝える。<br>仲間は同じページを開き、コードを入れて入室。アカウント登録は不要です。<br>※ホストが画面を閉じると勝負は終了します。</div>';
+}
+
+function lobbyHTML(v){
+  var pills=v.players.map(function(p,i){ return '<span class="ka-pill">'+esc(p)+(i===0?" ◎親":"")+(p===v.you?"(あなた)":"")+'</span>'; }).join("");
+  var ctrl;
+  if(v.host===v.you){
+    var can=v.players.length>=3;
+    var maxBtns="";
+    for(var mv=5;mv<=8;mv++){ var on=optMaxNum===mv; maxBtns+='<button class="ka-btn alt sm" style="margin:2px;'+(on?"background:#B8902E;color:#1a1408":"")+'" data-act="optMax" data-id="'+mv+'">1〜'+mv+'</button>'; }
+    var setBtns="";
+    for(var sv=1;sv<=3;sv++){ var son=optSets===sv; setBtns+='<button class="ka-btn alt sm" style="margin:2px;'+(son?"background:#B8902E;color:#1a1408":"")+'" data-act="optSets" data-id="'+sv+'">'+sv+'セット</button>'; }
+    var deckCount = 4*optMaxNum*optSets + 6 + 1; // 数字札 + 化け狐6 + 九尾1
+    var opts='<div class="ka-panel" style="margin:12px 0 0">'
+      +'<div class="ka-label">オプション ── ホストが設定</div>'
+      +'<div class="ka-sub" style="margin-bottom:4px">数字札の範囲</div><div>'+maxBtns+'</div>'
+      +'<div class="ka-sub" style="margin:10px 0 4px">数字札のセット数(1セット=4色×1〜'+optMaxNum+')</div><div>'+setBtns+'</div>'
+      +'<div class="ka-sub" style="margin:6px 0 0;color:#8b836f">全'+deckCount+'枚(数字'+(4*optMaxNum*optSets)+'+化け狐6+九尾1)</div>'
+      +'<div class="ka-sub" style="margin:10px 0 4px">色番勝ち(バッティングでも開始札と同色なら勝ち)</div>'
+      +'<button class="ka-btn alt sm" style="'+(optColorWin?"background:#B8902E;color:#1a1408":"")+'" data-act="optColor">'+(optColorWin?"オン":"オフ")+'</button>'
+      +'</div>';
+    ctrl=opts+'<button class="ka-btn" style="width:100%;margin-top:12px" data-act="start" '+(can?"":"disabled")+'>'
+      +(can?"勝負を始める":("あと"+(3-v.players.length)+"人で開始できる"))+'</button>';
+  } else { ctrl='<div class="ka-sub" style="text-align:center">部屋主('+esc(v.host)+')の開始を待っています…</div>'; }
+  return '<div class="ka-board" style="text-align:center">'
+    +'<div class="ka-label">部屋コード ── 仲間に伝えよう</div>'
+    +'<div class="ka-serif" style="font-size:42px;letter-spacing:.35em;color:#E8D9A8">'+ROOM+'</div></div>'
+    +'<div class="ka-panel"><div class="ka-label">集まった狐('+v.players.length+'/5)</div>'+pills
+    +'<div style="margin-top:14px">'+ctrl+'</div></div>'
+    +'<div class="ka-foot">手札は常時キープ ── 3人:8枚 ／ 4人:6枚 ／ 5人:5枚。山札が尽きるまで戦う。</div>';
+}
+
+function gameHTML(v){
+  var oya=v.players[v.oya];
+  var status='<div style="display:flex;justify-content:space-between;font-size:12px;color:#C9BFA8;padding:8px 2px">'
+    +'<span>第'+(v.roundNo||1)+'ラウンド ── 山札 残り'+v.deck.length+'枚</span><span>親:'+esc(oya)+'</span></div>'
+    +'<div style="font-size:10.5px;color:#8b836f;padding:0 2px 4px">数字1〜'+(v.maxNum||8)+'×'+(v.sets||2)+'セット'+(v.colorWin?' ／ 色番勝ちあり':'')+'</div>';
+
+  var startC = v.start? cardHTML(v.start,{}) : backHTML("—");
+  var pairedC = v.paired? cardHTML(v.paired,{}) : "";
+  var baseInfo = v.start? ('<div class="ka-sub" style="margin-top:2px">スート <b style="color:#E8D9A8">'+SUITS[v.start.s]+'</b>'
+     +(v.dir?(' ／ <span style="color:#E8D9A8">「'+(v.dir==="H"?"高":"低")+'」</span>'):"")+'</div>') : "";
+  var board='<div class="ka-board"><div class="ka-label">場</div>'
+    +'<div style="display:flex;gap:16px;align-items:flex-start">'
+    +'<div><div class="ka-sub">開始札'+(v.paired?"+特殊":"")+'</div>'+startC+pairedC+baseInfo+'</div>'
+    +'<div style="margin-left:auto;text-align:right"><div class="ka-sub">山:'+v.deck.length+'枚</div><div class="ka-sub">捨て:'+v.discard.length+'枚</div></div>'
+    +'</div></div>';
+
+  // --- 常時表示の手札(自分が伏せ札を選んでいる最中だけは、下の操作パネルに任せて省略) ---
+  var iAmPlaying = (v.phase==="play" && (v.playedNames||[]).indexOf(v.you)<0);
+  var handStrip="";
+  if(!iAmPlaying){
+    var myhand=(v.myHand||[]);
+    var hs2 = myhand.length ? myhand.map(function(c){ return cardHTML(c,{small:true}); }).join("") : '<span class="ka-sub">手札なし</span>';
+    var myPlayInfo="";
+    if(v.phase==="play" && v.myPlay){
+      myPlayInfo='<div class="ka-sub" style="margin-top:6px">あなたが伏せた札:</div>'
+        +'<div class="ka-row" style="margin-top:2px">'+cardHTML(v.myPlay.c,{d:v.myPlay.d,small:true})+'</div>';
+    }
+    handStrip='<div class="ka-panel"><div class="ka-label">あなたの手札('+myhand.length+'枚)</div>'
+      +'<div class="ka-row">'+hs2+'</div>'+myPlayInfo+'</div>';
+  }
+
+  var lr=v.lastRound, mid="";
+  if(lr && v.phase==="declare"){
+    var ents=lr.entries.map(function(e){ return '<div style="text-align:center">'+cardHTML(e.c,{d:e.d,mark:e.mark,small:true})+'<div class="ka-pname">'+esc(e.name)+'</div></div>'; }).join("");
+    mid='<div class="ka-panel"><div class="ka-label">前ラウンドの結果(R'+lr.round+'・'+(lr.dir==="H"?"高":"低")+')</div>'
+      +'<div class="ka-row">'+ents+'</div></div>';
+  }
+
+  var panel="";
+  if(v.phase==="declare"){
+    if(v.players[v.oya]===v.you){
+      panel='<div class="ka-panel"><div class="ka-label">あなたが親 ── 向きを宣言</div>'
+        +'<div style="display:flex;gap:10px">'
+        +'<button class="ka-dirbtn" data-act="declareH">高<div style="font-size:11px;font-weight:400">大きいほど強い</div></button>'
+        +'<button class="ka-dirbtn" data-act="declareL">低<div style="font-size:11px;font-weight:400">小さいほど強い</div></button>'
+        +'</div></div>';
+    } else {
+      panel='<div class="ka-panel"><div class="ka-sub" style="text-align:center">親('+esc(oya)+')が「高」か「低」を考えています…</div></div>';
+    }
+  }
+  else if(v.phase==="play"){
+    var done=v.playedNames||[];
+    var pills=v.players.map(function(p){ var ok=done.indexOf(p)>=0; return '<span class="ka-pill" style="opacity:'+(ok?1:.45)+'">'+esc(p)+' '+(ok?"✓":"…")+'</span>'; }).join("");
+    var mine = done.indexOf(v.you)>=0;
+    var body;
+    if(!mine){
+      var hand=(v.myHand||[]).map(function(c){ return cardHTML(c,{click:true,sel:sel===c.i,action:"selHand",id:c.i}); }).join("");
+      var selCard=null; (v.myHand||[]).forEach(function(c){ if(c.i===sel) selCard=c; });
+      var foxRow="";
+      if(selCard && isFox(selCard)){
+        var fvMax=v.maxNum||8; if(foxVal>fvMax) foxVal=fvMax;
+        foxRow='<div style="margin:6px 0"><span class="ka-sub">化ける値:</span>';
+        for(var fv=1;fv<=fvMax;fv++){ var on=foxVal===fv; foxRow+='<button class="ka-btn alt sm" style="margin:2px;'+(on?"background:#B8902E;color:#1a1408":"")+'" data-act="foxVal" data-id="'+fv+'">'+fv+'</button>'; }
+        foxRow+='</div>';
+      }
+      body='<div class="ka-sub">あなたの手札:</div><div class="ka-row" style="margin:6px 0">'+hand+'</div>'+foxRow
+        +'<button class="ka-btn" style="width:100%;margin-top:6px" data-act="play" '+(sel?"":"disabled")+'>この札を伏せて出す</button>';
+    } else {
+      body='<div class="ka-sub" style="text-align:center">あなたは出し終えました。全員の公開を待っています…</div>';
+    }
+    panel='<div class="ka-panel"><div class="ka-label">「'+(v.dir==="H"?"高":"低")+'」── 伏せて1枚('+done.length+'/'+v.players.length+'人済)</div>'
+      +'<div class="ka-row" style="margin-bottom:8px">'+pills+'</div>'+body+'</div>';
+  }
+  else if(v.phase==="pick" && lr){
+    var ents2=lr.entries.map(function(e){
+      var clickable = (v.pickFor===v.you && !isKyubi(e.c));
+      return '<div style="text-align:center">'+cardHTML(e.c,{d:e.d,mark:e.mark,click:clickable,action:clickable?"pick":"",id:e.c.i})+'<div class="ka-pname">'+esc(e.name)+'</div></div>';
+    }).join("");
+    var note;
+    if(v.pickFor===v.you){
+      note='<div class="ka-sub"><b style="color:#E8D9A8">場から1枚タップして蔵へ。</b>さらに開始札'+(v.paired?"+特殊札":"")+'も自動で得ます。</div>';
+    } else { note='<div class="ka-sub" style="text-align:center">'+esc(v.pickFor)+'が褒美を選んでいます…</div>'; }
+    panel='<div class="ka-panel"><div class="ka-label">公開!'+(lr.dir==="H"?"高":"低")+' ── 勝者:'+esc(v.pickFor)+(lr.kind==="okobore"?"(おこぼれ)":"")+'</div>'
+      +'<div class="ka-row" style="margin-bottom:8px">'+ents2+'</div>'+note+'</div>';
+  }
+
+  // 自分の蔵
+  var kuraBody="";
+  if(showKura){ kuraBody='<div class="ka-row" style="margin-top:8px">'+((v.myKura&&v.myKura.length)? v.myKura.map(function(c){return cardHTML(c,{small:true});}).join("") : '<span class="ka-sub">まだ空です。</span>')+'</div>'; }
+  var others=v.players.filter(function(p){return p!==v.you;}).map(function(p){ return esc(p)+" "+((v.kuraCounts&&v.kuraCounts[p])||0)+"枚"; }).join(" ／ ");
+  var kura='<div class="ka-panel"><div style="display:flex;justify-content:space-between;align-items:center">'
+    +'<span class="ka-label" style="margin:0">あなたの蔵('+((v.myKura||[]).length)+'枚)</span>'
+    +'<button class="ka-btn alt sm" data-act="toggleKura">'+(showKura?"伏せる":"見る")+'</button></div>'
+    +kuraBody+'<div class="ka-sub" style="margin-top:8px">他の狐の蔵:'+others+'</div></div>';
+
+  var log='<div class="ka-panel"><div class="ka-label">夜の記録</div><div class="ka-log">'+(v.log||[]).map(function(l){return '<div>'+esc(l)+'</div>';}).join("")+'</div></div>';
+
+  return status+board+mid+panel+handStrip+kura+log+'<div class="ka-foot">同期はP2P。反応が無いときは少し待つか、ホームから同名+同コードで再入室を。</div>';
+}
+
+function dawnHTML(v){
+  var done = v.dawn && v.dawn[v.you] && v.dawn[v.you].done;
+  var waiting = v.players.filter(function(p){ return !(v.dawn && v.dawn[p] && v.dawn[p].done); });
+  var myKura = v.myKura||[];
+  var usedIds={}; mySets.forEach(function(set){ set.forEach(function(c){ usedIds[c.i]=1; }); });
+  var freeKura = myKura.filter(function(c){ return !usedIds[c.i]; });
+  var dawnCards = dawnSel.map(function(id){ var f=null; myKura.forEach(function(c){ if(c.i===id) f=c; }); return f; }).filter(Boolean);
+  var dawnOk = setValid(dawnCards, v.maxNum);
+  var myScore = mySets.reduce(function(a,s){return a+setPoints(s);},0);
+
+  var top='<div class="ka-board"><div class="ka-label">夜明け ── 蔵の札で「ちょうど9」を組もう</div>'
+    +'<div class="ka-sub">2〜3枚で合計9。化け狐は万能。九尾は単体で1組。</div></div>';
+  if(done){
+    return top+'<div class="ka-panel" style="text-align:center">提出済み。残り:'+(waiting.length?waiting.map(esc).join("、"):"集計中…")+'</div>';
+  }
+  var pool = freeKura.map(function(c){ return cardHTML(c,{click:true,sel:dawnSel.indexOf(c.i)>=0,action:"dawnSel",id:c.i}); }).join("") || '<span class="ka-sub">残り札なし</span>';
+  var built = mySets.map(function(s,i){
+    return '<div style="margin-bottom:4px">'+s.map(function(c){return cardHTML(c,{small:true});}).join("")
+      +'<span class="ka-sub" style="margin:0 8px">'+setPoints(s)+'点</span>'
+      +'<button class="ka-btn alt sm" data-act="unset" data-id="'+i+'">崩す</button></div>';
+  }).join("") || '<div class="ka-sub">まだ組がありません。</div>';
+
+  return top
+   +'<div class="ka-panel"><div class="ka-label">蔵の札(タップして選ぶ)</div><div class="ka-row">'+pool+'</div>'
+   +'<div style="margin-top:8px;display:flex;gap:8px">'
+   +'<button class="ka-btn sm" data-act="addSet" '+(dawnOk?"":"disabled")+'>この'+dawnSel.length+'枚で組にする'+(dawnOk?("("+setPoints(dawnCards)+"点)"):"")+'</button>'
+   +'<button class="ka-btn alt sm" data-act="clearSel">選び直す</button></div>'
+   +((dawnSel.length>=1&&!dawnOk)?'<div class="ka-sub" style="margin-top:6px">この選び方では9になりません。</div>':"")
+   +'</div>'
+   +'<div class="ka-panel"><div class="ka-label">できた組 ── 現在 '+myScore+'点</div>'+built
+   +'<button class="ka-btn" style="width:100%;margin-top:10px" data-act="submitDawn">これで提出する('+myScore+'点)</button></div>';
+}
+
+function resultHTML(v){
+  var allCards={};
+  v.players.forEach(function(p){ (v.kura[p]||[]).forEach(function(c){ allCards[c.i]=c; }); });
+  var ranking=v.players.map(function(p){ var d=v.dawn[p]; return {p:p,score:d.score,unusedSum:d.unusedSum,sets:d.sets}; })
+    .sort(function(a,b){ return b.score-a.score || b.unusedSum-a.unusedSum; });
+  var top=ranking[0];
+  var rows=ranking.map(function(r,idx){
+    var sets=(r.sets||[]).map(function(ids){
+      var cards=ids.map(function(id){return allCards[id];}).filter(Boolean);
+      return '<span style="display:inline-block;margin:2px 8px 2px 0;padding:2px 6px;border:1px solid rgba(217,205,181,.3);border-radius:8px">'
+        +cards.map(function(c){return cardHTML(c,{small:true});}).join("")
+        +'<span class="ka-sub" style="margin-left:4px">'+setPoints(cards)+'点</span></span>';
+    }).join("") || '<span class="ka-sub">組なし</span>';
+    return '<div class="ka-panel"><div style="display:flex;justify-content:space-between">'
+      +'<b>'+(idx+1)+'位 '+esc(r.p)+(r.p===v.you?"(あなた)":"")+'</b>'
+      +'<span>'+r.score+'点 <span class="ka-sub">/ 未使用計'+r.unusedSum+'</span></span></div>'
+      +'<div style="margin-top:6px">'+sets+'</div></div>';
+  }).join("");
+  return '<div class="ka-board" style="text-align:center"><div class="ka-label">夜明け ── 格付け</div>'
+    +'<div class="ka-serif" style="font-size:26px;color:#E8D9A8;margin:6px 0">真の九尾は <b>'+esc(top.p)+'</b></div>'
+    +'<div class="ka-sub">'+top.score+'点</div></div>'
+    +rows+'<div class="ka-foot">もう一度遊ぶには、ホームから新しい部屋を建ててください。</div>';
+}
+
+// ============================================================
+//  入力処理(イベント委譲)
+// ============================================================
+document.addEventListener("click", function(ev){
+  var el=ev.target.closest("[data-act]"); if(!el) return;
+  var act=el.getAttribute("data-act");
+  var id=el.getAttribute("data-id");
+
+  if(act==="host"){ var n=document.getElementById("nameIn"); MYNAME=(n?n.value:"").trim(); if(!MYNAME){ netError="名前を入れてください。"; render(); return; } MODE="host"; SCREEN="game"; startHost(); return; }
+  if(act==="join"){
+    var n2=document.getElementById("nameIn"); MYNAME=(n2?n2.value:"").trim();
+    var c2=document.getElementById("codeIn"); var code=(c2?c2.value:"").trim().toUpperCase();
+    if(!MYNAME){ netError="名前を入れてください。"; render(); return; }
+    if(!code){ netError="部屋コードを入れてください。"; render(); return; }
+    MODE="client"; SCREEN="game"; startClient(code); return;
+  }
+  if(act==="toggleRef"){ showRef=!showRef; render(); return; }
+  if(act==="toggleKura"){ showKura=!showKura; render(); return; }
+  if(act==="optMax"){ optMaxNum=parseInt(id,10); render(); return; }
+  if(act==="optSets"){ optSets=parseInt(id,10); render(); return; }
+  if(act==="optColor"){ optColorWin=!optColorWin; render(); return; }
+  if(act==="start"){ doAction({type:"start", maxNum:optMaxNum, sets:optSets, colorWin:optColorWin}); return; }
+  if(act==="declareH"){ doAction({type:"declare",dir:"H"}); return; }
+  if(act==="declareL"){ doAction({type:"declare",dir:"L"}); return; }
+  if(act==="selHand"){ sel=id; render(); return; }
+  if(act==="foxVal"){ foxVal=parseInt(id,10); render(); return; }
+  if(act==="play"){ if(sel){ var fv=foxVal; doAction({type:"play",cardId:sel,foxVal:fv}); sel=null; } return; }
+  if(act==="pick"){ doAction({type:"pick",cardId:id}); return; }
+
+  // 夜明け
+  if(act==="dawnSel"){
+    var i=dawnSel.indexOf(id);
+    if(i>=0) dawnSel.splice(i,1); else if(dawnSel.length<3) dawnSel.push(id);
+    render(); return;
+  }
+  if(act==="clearSel"){ dawnSel=[]; render(); return; }
+  if(act==="addSet"){
+    var myKura=(VIEW&&VIEW.myKura)||[];
+    var cards=dawnSel.map(function(x){ var f=null; myKura.forEach(function(c){ if(c.i===x) f=c; }); return f; }).filter(Boolean);
+    if(setValid(cards, VIEW&&VIEW.maxNum)){ mySets.push(cards); dawnSel=[]; render(); }
+    return;
+  }
+  if(act==="unset"){ mySets.splice(parseInt(id,10),1); render(); return; }
+  if(act==="submitDawn"){
+    var mk=(VIEW&&VIEW.myKura)||[];
+    var ids={}; mySets.forEach(function(s){ s.forEach(function(c){ ids[c.i]=1; }); });
+    var unused=mk.filter(function(c){ return !ids[c.i]; });
+    var unusedSum=unused.reduce(function(a,c){ return a+(isNum(c)?c.v:0); },0);
+    var score=mySets.reduce(function(a,s){ return a+setPoints(s); },0);
+    var setsIds=mySets.map(function(s){ return s.map(function(c){return c.i;}); });
+    doAction({type:"dawn", sets:setsIds, score:score, unusedSum:unusedSum});
+    return;
+  }
+});
+
+render();
+</script>
+</body>
+</html>
