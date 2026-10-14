@@ -68,7 +68,7 @@ var SUIT_BG = ["#F5F0E6","#33312E","#2D5C8F","#B5413A"];
 var SUIT_FG = ["#2B2B2B","#F5F0E6","#F5F0E6","#F5F0E6"];
 var KYUBI = { i:"K0", t:"K" };
 var PEER_PREFIX = "kyubiawase9-";
-var BUILD_DATE = "2026-06-18";   // このファイルの作成日
+var BUILD_DATE = "2026-10-14";   // このファイルの作成日
 
 function isNum(c){ return !!c && c.v !== undefined; }
 function isFox(c){ return !!c && c.t === "F"; }
@@ -119,6 +119,12 @@ function judge(entries,dir,oya,N,startSuit,colorWin){
   var ky=null; entries.forEach(function(e){ if(isKyubi(e.c)) ky=e; });
   var marks={}; entries.forEach(function(e){ marks[e.name]="lose"; });
   if(ky){ entries.forEach(function(e){ marks[e.name]= e===ky?"kyubi":"lose"; }); return {kind:"win",winner:ky.name,marks:marks,kyubi:true}; }
+  // 全員が同じ数字(化け狐の宣言値を含む)なら勝者なし=流れ。色番勝ち・おこぼれより優先。
+  var v0=effVal(entries[0]);
+  if(entries.every(function(e){ return effVal(e)===v0; })){
+    entries.forEach(function(e){ marks[e.name]="cxl"; });
+    return {kind:"none",winner:null,marks:marks};
+  }
   var reals=entries.filter(function(e){return isNum(e.c);});
   var foxes=entries.filter(function(e){return isFox(e.c);});
   var cnt={}; reals.forEach(function(e){ cnt[e.c.v]=(cnt[e.c.v]||0)+1; });
@@ -189,6 +195,14 @@ function resolveRound(s){
   s.lastRound={ round:s.roundNo, dir:s.dir,
     entries:entries.map(function(e){ return {name:e.name,c:e.c,d:e.d,mark:res.marks[e.name]}; }),
     kind:res.kind, winner:res.winner||null };
+  if(res.kind==="none"){
+    // 勝者なし:場札・開始札(+セットの特殊札)はすべて捨て札へ
+    s.discard=s.discard.concat(entries.map(function(e){return e.c;}), s.start?[s.start]:[], s.paired?[s.paired]:[]);
+    s.start=null; s.paired=null; s.pickFor=null;
+    pushLog(s,"R"+s.roundNo+":全員が同じ数字 ── 勝者なしで流れた。場札は捨て札へ。");
+    startNextRound(s);
+    return;
+  }
   var label = res.kind==="okobore"?"(おこぼれ)" : (res.kyubi?"(九尾の一撃)":"");
   pushLog(s,"R"+s.roundNo+":"+res.winner+"の勝ち"+label+"。場から1枚選ぶ。");
   s.phase="pick"; s.pickFor=res.winner;
@@ -393,7 +407,7 @@ var refHTML = '<div class="ka-panel" style="font-size:12px;line-height:1.8">'
  +'<b>① 開始札</b>:中央に1枚めくる(色=同スートボーナス用)。特殊札ならもう1枚めくってセット。<br>'
  +'<b>② 宣言</b>:親が高(大きいほど強い)か低(小さいほど強い)かを宣言。<br>'
  +'<b>③ 全員伏せて1枚</b>(パス不可)。<br>'
- +'<b>④ 公開</b>:高=最大/低=最小が勝ち。同じ数字は相殺(全員負け)。相殺で残らなければ親から一番遠い席が拾う。<br>'
+ +'<b>④ 公開</b>:高=最大/低=最小が勝ち。同じ数字は相殺(全員負け)。相殺で残らなければ親から一番遠い席が拾う。<b>全員が同じ数字(化け狐の宣言含む)なら勝者なしで流れ、場札・開始札は捨て札へ。</b><br>'
  +'<b>⑤ 褒美</b>:開始札+場の好きな1枚を蔵へ(使った九尾は拾えない)。<br>'
  +'<b>⑥ 補充</b>:各自、山札から1枚引いて手札を常にX枚に保つ。<b>山札が尽きたら夜明け</b>(捨て札は戻さない)。<br>'
  +'<b>夜明け</b>:合計9の組(2〜3枚)=1点。同スート2枚=2点・3枚=3点。九尾単体=1点。同点は未使用札の合計。</div>';
@@ -499,7 +513,7 @@ function gameHTML(v){
   var lr=v.lastRound, mid="";
   if(lr && v.phase==="declare"){
     var ents=lr.entries.map(function(e){ return '<div style="text-align:center">'+cardHTML(e.c,{d:e.d,mark:e.mark,small:true})+'<div class="ka-pname">'+esc(e.name)+'</div></div>'; }).join("");
-    mid='<div class="ka-panel"><div class="ka-label">前ラウンドの結果(R'+lr.round+'・'+(lr.dir==="H"?"高":"低")+')</div>'
+    mid='<div class="ka-panel"><div class="ka-label">前ラウンドの結果(R'+lr.round+'・'+(lr.dir==="H"?"高":"低")+')'+(lr.kind==="none"?' ── 勝者なし(流れ)':'')+'</div>'
       +'<div class="ka-row">'+ents+'</div></div>';
   }
 
