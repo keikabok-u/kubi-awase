@@ -46,6 +46,9 @@
   .ka-foot { font-size: 10.5px; color: #8b836f; text-align: center; margin-top: 24px; line-height: 1.7; }
   .ka-dirbtn { flex: 1; padding: 16px 0; font-size: 18px; border-radius: 10px; border: 1.5px solid #b8902e; background: rgba(251,246,236,.04); color: #efe8d8; font-weight: 800; cursor: pointer; }
   .ka-dirbtn:disabled { opacity: .25; cursor: default; }
+  .ka-dirbig { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 4px 0 10px; padding: 8px 0; border: 2px solid #b8902e; border-radius: 12px; background: rgba(184,144,46,.14); }
+  .ka-dirbig b { font-size: 44px; line-height: 1; color: #E8D9A8; font-weight: 900; }
+  .ka-dirbig span { font-size: 13px; color: #C9BFA8; }
   code { background: rgba(0,0,0,.3); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
   @media (prefers-reduced-motion: reduce) { .ka-card.click { transition: none; } }
 </style>
@@ -68,7 +71,7 @@ var SUIT_BG = ["#F5F0E6","#33312E","#2D5C8F","#B5413A"];
 var SUIT_FG = ["#2B2B2B","#F5F0E6","#F5F0E6","#F5F0E6"];
 var KYUBI = { i:"K0", t:"K" };
 var PEER_PREFIX = "kyubiawase9-";
-var BUILD_DATE = "2026-10-14";   // このファイルの作成日
+var BUILD_DATE = "2026-10-18";   // このファイルの作成日
 
 function isNum(c){ return !!c && c.v !== undefined; }
 function isFox(c){ return !!c && c.t === "F"; }
@@ -479,6 +482,10 @@ function lobbyHTML(v){
     +'<div class="ka-foot">手札は常時キープ ── 3人:8枚 ／ 4人:6枚 ／ 5人:5枚。山札が尽きるまで戦う。</div>';
 }
 
+function dirBigHTML(dir){
+  return '<div class="ka-dirbig"><b>'+(dir==="H"?"高":"低")+'</b><span>'+(dir==="H"?"大きいほど強い":"小さいほど強い")+'</span></div>';
+}
+
 function gameHTML(v){
   var oya=v.players[v.oya];
   var status='<div style="display:flex;justify-content:space-between;font-size:12px;color:#C9BFA8;padding:8px 2px">'
@@ -487,9 +494,9 @@ function gameHTML(v){
 
   var startC = v.start? cardHTML(v.start,{}) : backHTML("—");
   var pairedC = v.paired? cardHTML(v.paired,{}) : "";
-  var baseInfo = v.start? ('<div class="ka-sub" style="margin-top:2px">スート <b style="color:#E8D9A8">'+SUITS[v.start.s]+'</b>'
-     +(v.dir?(' ／ <span style="color:#E8D9A8">「'+(v.dir==="H"?"高":"低")+'」</span>'):"")+'</div>') : "";
+  var baseInfo = v.start? ('<div class="ka-sub" style="margin-top:2px">スート <b style="color:#E8D9A8">'+SUITS[v.start.s]+'</b></div>') : "";
   var board='<div class="ka-board"><div class="ka-label">場</div>'
+    +(v.dir && (v.phase==="play"||v.phase==="pick") ? dirBigHTML(v.dir) : "")
     +'<div style="display:flex;gap:16px;align-items:flex-start">'
     +'<div><div class="ka-sub">開始札'+(v.paired?"+特殊":"")+'</div>'+startC+pairedC+baseInfo+'</div>'
     +'<div style="margin-left:auto;text-align:right"><div class="ka-sub">山:'+v.deck.length+'枚</div><div class="ka-sub">捨て:'+v.discard.length+'枚</div></div>'
