@@ -296,6 +296,8 @@ function hostApply(name, action){
     s.kura[name]=s.kura[name].concat(gain);
     s.discard=s.discard.concat(entries.filter(function(e){return e.c.i!==action.cardId;}).map(function(e){return e.c;}));
     s.carry=[]; s.pickFor=null;
+    s.pickSeq=(s.pickSeq||0)+1;
+    s.lastPick={ seq:s.pickSeq, name:name, ids:gain.map(function(c){return c.i;}) };   // 取り札の演出用
     pushLog(s,name+"が"+gain.length+"枚を蔵に納めた。"); afterRound(s);
   }
   else if(action.type==="dawn"){
@@ -393,7 +395,8 @@ function cardHTML(c, opts){
   var mark="";
   if(opts.mark){ var lbl={win:"勝",kyubi:"勝",lose:"負",cxl:"相殺",out:"外"}[opts.mark]; mark='<div class="ka-mark '+opts.mark+'">'+lbl+'</div>'; }
   var data = opts.action? (' data-act="'+opts.action+'" data-id="'+esc(opts.id)+'"') : "";
-  if(opts.anim) data += ' data-anim="'+opts.anim+'" data-cid="'+esc(c.i)+'"';
+  data += ' data-cid="'+esc(c.i)+'"';
+  if(opts.anim) data += ' data-anim="'+opts.anim+'"';
   return '<div class="'+cls+'"'+style+data+'>'+inner+mark+'</div>';
 }
 function backHTML(label){ return '<div class="ka-card back">'+(label||"?")+'</div>'; }
@@ -419,29 +422,75 @@ function render(){
   var ref = showRef? refHTML : "";
 
   if(v.phase==="lobby"){ root.innerHTML=head+ref+lobbyHTML(v); return; }
+  if(v.phase!=="play" && v.phase!=="pick") launchTakenCards(captureTakenCards(root, v));
   if(v.phase==="result" && v.dawn && Object.keys(v.dawn).length===v.players.length){ root.innerHTML=head+resultHTML(v); return; }
   if(v.phase==="dawn" || v.phase==="result"){ root.innerHTML=head+ref+dawnHTML(v); return; }
+  var ghosts = captureTakenCards(root, v);
   root.innerHTML=head+ref+gameHTML(v);
+  launchTakenCards(ghosts);
   applyCardAnims(root, v);
 }
 
 // ----- カードの演出(配札スライド/開始札めくり) -----
 // 画面は毎回まるごと描き直すので、「新しく現れた札」だけに開始時刻を記録し、
 // 途中で再描画されても負の animation-delay で続きから再生する。
-var ANIM = { hand:{}, start:null, at:{} };   // at[kind+id] = {t0, dur}
-var DEAL_STEP = 110, DEAL_DUR = 450, FLIP_DUR = 700;
+var ANIM = { hand:{}, start:null, at:{}, pickSeq:null, busyUntil:0 };   // at[kind+id] = {t0, dur}
+var DEAL_STEP = 110, DEAL_DUR = 450, FLIP_DUR = 700, TAKE_STEP = 90, TAKE_DUR = 750;
+var REDUCED = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// 取り札:描き直す前に、取られた札の位置と見た目を控えておく
+function captureTakenCards(root, v){
+  var lp = v.lastPick, out = [];
+  // 入室直後など、最初に見た画面では演出しない(取った瞬間を見ていないため)
+  if(ANIM.pickSeq === null){ ANIM.pickSeq = lp ? lp.seq : 0; return out; }
+  if(!lp || lp.seq === ANIM.pickSeq) return out;
+  ANIM.pickSeq = lp.seq;
+  if(REDUCED) return out;
+  lp.ids.forEach(function(id){
+    var el = root.querySelector('.ka-card[data-cid="'+id+'"]');
+    if(!el) return;
+    var r = el.getBoundingClientRect();
+    if(!r.width) return;
+    var g = el.cloneNode(true);
+    g.className = g.className.replace(/(click|sel|deal-in|flip-in)/g,"");
+    g.removeAttribute("data-act"); g.removeAttribute("data-anim"); g.style.animation = "none";
+    out.push({ el:g, rect:r });
+  });
+  return out;
+}
+// 取り札:画面下中央へ吸い込まれるように流して消す
+function launchTakenCards(ghosts){
+  if(!ghosts.length) return;
+  var W = window.innerWidth, H = window.innerHeight;
+  ghosts.forEach(function(gh, k){
+    var r = gh.rect, g = gh.el;
+    g.style.position = "fixed"; g.style.left = r.left+"px"; g.style.top = r.top+"px";
+    g.style.width = r.width+"px"; g.style.height = r.height+"px"; g.style.margin = "0";
+    g.style.zIndex = "50"; g.style.pointerEvents = "none"; g.style.transform = "none";
+    document.body.appendChild(g);
+    var dx = W/2 - (r.left + r.width/2), dy = H + 40 - r.top;
+    var a = g.animate([
+      { transform:"translate(0,0) scale(1) rotate(0deg)", opacity:1 },
+      { transform:"translate(0,-14px) scale(1.12) rotate(0deg)", opacity:1, offset:.18 },
+      { transform:"translate("+dx+"px,"+dy+"px) scale(.6) rotate("+(k%2?8:-8)+"deg)", opacity:.85 }
+    ], { duration:TAKE_DUR, delay:k*TAKE_STEP, easing:"cubic-bezier(.45,0,.75,.3)", fill:"both" });
+    a.onfinish = a.oncancel = function(){ if(g.parentNode) g.parentNode.removeChild(g); };
+  });
+  ANIM.busyUntil = Date.now() + (ghosts.length-1)*TAKE_STEP + TAKE_DUR*0.8;
+}
 function applyCardAnims(root, v){
   var now = Date.now();
   // 手札:前回の手札に無かった札=新しく配られた札
   var hand = v.myHand||[], prev = ANIM.hand, fresh = [], cur = {};
   hand.forEach(function(c){ cur[c.i]=1; if(!prev[c.i]) fresh.push(c.i); });
-  fresh.forEach(function(id,k){ ANIM.at["deal"+id] = { t0: now + k*DEAL_STEP, dur: DEAL_DUR }; });
+  var base = Math.max(now, ANIM.busyUntil);   // 取り札が流れ終わってから
+  fresh.forEach(function(id,k){ ANIM.at["deal"+id] = { t0: base + k*DEAL_STEP, dur: DEAL_DUR }; });
   ANIM.hand = cur;
-  var dealEnd = fresh.length ? now + (fresh.length-1)*DEAL_STEP + DEAL_DUR : 0;
+  var dealEnd = fresh.length ? base + (fresh.length-1)*DEAL_STEP + DEAL_DUR : 0;
   // 開始札:前回と違う札になったらめくる(配札中なら配り終えてから)
   var sKey = v.start ? v.start.i + "/" + (v.paired ? v.paired.i : "") : null;
   if(sKey && sKey !== ANIM.start){
-    var t0 = Math.max(now, dealEnd);
+    var t0 = Math.max(now, dealEnd, ANIM.busyUntil);
     ANIM.at["flip"+v.start.i] = { t0: t0, dur: FLIP_DUR };
     if(v.paired) ANIM.at["flip"+v.paired.i] = { t0: t0 + FLIP_DUR*0.6, dur: FLIP_DUR };
   }
