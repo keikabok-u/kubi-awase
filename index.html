@@ -10,7 +10,7 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; min-height: 100%; }
   body { background: #1a2438; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif; }
-  .ka-root { max-width: 540px; margin: 0 auto; min-height: 100vh; color: #efe8d8; padding: 0 14px 90px;
+  .ka-root { max-width: 540px; margin: 0 auto; min-height: 100vh; overflow-x: clip; color: #efe8d8; padding: 0 14px 90px;
     background: radial-gradient(1200px 500px at 80% -10%, #2c3c5e 0%, #22304a 45%, #1a2438 100%); }
   .ka-serif { font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif; }
   .ka-head { display: flex; align-items: baseline; justify-content: space-between; padding: 16px 2px 8px; border-bottom: 1px solid rgba(184,144,46,.5); }
@@ -48,7 +48,18 @@
   .ka-dirbig b { font-size: 44px; line-height: 1; color: #E8D9A8; font-weight: 900; }
   .ka-dirbig span { font-size: 13px; color: #C9BFA8; }
   code { background: rgba(0,0,0,.3); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
-  @media (prefers-reduced-motion: reduce) { .ka-card.click { transition: none; } }
+  /* 配札:横からスライドイン */
+  .ka-card.deal-in { animation: kaDealIn .45s cubic-bezier(.2,.8,.3,1) both; }
+  @keyframes kaDealIn { from { translate: 110vw 0; opacity: 0; } 60% { opacity: 1; } to { translate: 0 0; opacity: 1; } }
+  /* 開始札:裏から表へひっくり返す */
+  .ka-card.flip-in { animation: kaFlipIn .7s ease-in-out both; }
+  .ka-card.flip-in:after { content: "九"; position: absolute; inset: -1.5px; border-radius: 7px; border: 1.5px solid #b8902e;
+    display: flex; align-items: center; justify-content: center; color: #b8902e; font-size: 15px;
+    background: repeating-linear-gradient(45deg,#2f3d5c,#2f3d5c 5px,#27334e 5px,#27334e 10px);
+    transform: scaleX(-1); animation: kaBackHide .7s linear both; animation-delay: inherit; }
+  @keyframes kaFlipIn { from { transform: perspective(500px) rotateY(180deg) scale(1.08); } 50% { transform: perspective(500px) rotateY(90deg) scale(1.15); } to { transform: perspective(500px) rotateY(0deg) scale(1); } }
+  @keyframes kaBackHide { 0%, 49.9% { visibility: visible; } 50%, 100% { visibility: hidden; } }
+  @media (prefers-reduced-motion: reduce) { .ka-card.click { transition: none; } .ka-card.deal-in, .ka-card.flip-in, .ka-card.flip-in:after { animation: none; } }
 </style>
 </head>
 <body>
@@ -69,7 +80,7 @@ var SUIT_BG = ["#F5F0E6","#33312E","#2D5C8F","#B5413A"];
 var SUIT_FG = ["#2B2B2B","#F5F0E6","#F5F0E6","#F5F0E6"];
 var KYUBI = { i:"K0", t:"K" };
 var PEER_PREFIX = "kyubiawase9-";
-var BUILD_DATE = "2026-10-27";   // このファイルの作成日
+var BUILD_DATE = "2026-11-23";   // このファイルの作成日
 
 function isNum(c){ return !!c && c.v !== undefined; }
 function isFox(c){ return !!c && c.t === "F"; }
@@ -382,6 +393,7 @@ function cardHTML(c, opts){
   var mark="";
   if(opts.mark){ var lbl={win:"勝",kyubi:"勝",lose:"負",cxl:"相殺",out:"外"}[opts.mark]; mark='<div class="ka-mark '+opts.mark+'">'+lbl+'</div>'; }
   var data = opts.action? (' data-act="'+opts.action+'" data-id="'+esc(opts.id)+'"') : "";
+  if(opts.anim) data += ' data-anim="'+opts.anim+'" data-cid="'+esc(c.i)+'"';
   return '<div class="'+cls+'"'+style+data+'>'+inner+mark+'</div>';
 }
 function backHTML(label){ return '<div class="ka-card back">'+(label||"?")+'</div>'; }
@@ -410,6 +422,37 @@ function render(){
   if(v.phase==="result" && v.dawn && Object.keys(v.dawn).length===v.players.length){ root.innerHTML=head+resultHTML(v); return; }
   if(v.phase==="dawn" || v.phase==="result"){ root.innerHTML=head+ref+dawnHTML(v); return; }
   root.innerHTML=head+ref+gameHTML(v);
+  applyCardAnims(root, v);
+}
+
+// ----- カードの演出(配札スライド/開始札めくり) -----
+// 画面は毎回まるごと描き直すので、「新しく現れた札」だけに開始時刻を記録し、
+// 途中で再描画されても負の animation-delay で続きから再生する。
+var ANIM = { hand:{}, start:null, at:{} };   // at[kind+id] = {t0, dur}
+var DEAL_STEP = 110, DEAL_DUR = 450, FLIP_DUR = 700;
+function applyCardAnims(root, v){
+  var now = Date.now();
+  // 手札:前回の手札に無かった札=新しく配られた札
+  var hand = v.myHand||[], prev = ANIM.hand, fresh = [], cur = {};
+  hand.forEach(function(c){ cur[c.i]=1; if(!prev[c.i]) fresh.push(c.i); });
+  fresh.forEach(function(id,k){ ANIM.at["deal"+id] = { t0: now + k*DEAL_STEP, dur: DEAL_DUR }; });
+  ANIM.hand = cur;
+  var dealEnd = fresh.length ? now + (fresh.length-1)*DEAL_STEP + DEAL_DUR : 0;
+  // 開始札:前回と違う札になったらめくる(配札中なら配り終えてから)
+  var sKey = v.start ? v.start.i + "/" + (v.paired ? v.paired.i : "") : null;
+  if(sKey && sKey !== ANIM.start){
+    var t0 = Math.max(now, dealEnd);
+    ANIM.at["flip"+v.start.i] = { t0: t0, dur: FLIP_DUR };
+    if(v.paired) ANIM.at["flip"+v.paired.i] = { t0: t0 + FLIP_DUR*0.6, dur: FLIP_DUR };
+  }
+  ANIM.start = sKey;
+  root.querySelectorAll("[data-anim]").forEach(function(el){
+    var kind = el.getAttribute("data-anim"), a = ANIM.at[kind + el.getAttribute("data-cid")];
+    if(!a) return;
+    if(now >= a.t0 + a.dur){ delete ANIM.at[kind + el.getAttribute("data-cid")]; return; }
+    el.style.animationDelay = (a.t0 - now) + "ms";
+    el.classList.add(kind==="deal" ? "deal-in" : "flip-in");
+  });
 }
 
 function homeHTML(){
@@ -458,8 +501,8 @@ function gameHTML(v){
   var status='<div style="display:flex;justify-content:space-between;font-size:12px;color:#C9BFA8;padding:8px 2px">'
     +'<span>第'+v.handNo+'/'+v.hands+'局 ── ラウンド '+v.roundInHand+'/'+(v.handSize-1)+'</span><span>めくり係:'+esc(v.players[v.flipper])+'</span></div>';
 
-  var startC = v.start? cardHTML(v.start,{}) : backHTML("—");
-  var pairedC = v.paired? cardHTML(v.paired,{}) : "";
+  var startC = v.start? cardHTML(v.start,{anim:"flip"}) : backHTML("—");
+  var pairedC = v.paired? cardHTML(v.paired,{anim:"flip"}) : "";
   var carry = v.carry||[];
   var carryC = carry.length? ('<div style="margin-left:6px"><div class="ka-sub">持ち越し('+carry.length+'枚)</div><div class="ka-row">'
      +carry.map(function(c){ return cardHTML(c,{small:true}); }).join("")+'</div></div>') : "";
@@ -475,7 +518,7 @@ function gameHTML(v){
   var handStrip="";
   if(!iAmPlaying){
     var myhand=(v.myHand||[]);
-    var hs2 = myhand.length ? myhand.map(function(c){ return cardHTML(c,{small:true}); }).join("") : '<span class="ka-sub">手札なし</span>';
+    var hs2 = myhand.length ? myhand.map(function(c){ return cardHTML(c,{small:true,anim:"deal"}); }).join("") : '<span class="ka-sub">手札なし</span>';
     var myPlayInfo="";
     if(v.phase==="play" && v.myPlay){
       myPlayInfo='<div class="ka-sub" style="margin-top:6px">あなたが伏せた札:</div>'
@@ -500,7 +543,7 @@ function gameHTML(v){
     var mine = done.indexOf(v.you)>=0;
     var body;
     if(!mine){
-      var hand=(v.myHand||[]).map(function(c){ return cardHTML(c,{click:true,sel:sel===c.i,action:"selHand",id:c.i}); }).join("");
+      var hand=(v.myHand||[]).map(function(c){ return cardHTML(c,{click:true,sel:sel===c.i,action:"selHand",id:c.i,anim:"deal"}); }).join("");
       var selCard=null; (v.myHand||[]).forEach(function(c){ if(c.i===sel) selCard=c; });
       var foxRow="";
       if(selCard && isFox(selCard)){
